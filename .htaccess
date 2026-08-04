@@ -1,0 +1,10 @@
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
+PassengerAppRoot "/home/xtreamco/avo.totalia.com.ar"
+PassengerBaseURI "/"
+PassengerNodejs "/opt/alt/alt-nodejs24/root/usr/bin/node"
+PassengerAppType node
+PassengerStartupFile server.js
+PassengerFriendlyErrorPages on
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
+
+Options -Indexes

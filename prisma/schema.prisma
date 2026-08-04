@@ -1,0 +1,116 @@
+// This is your Prisma schema file
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String     @id @default(uuid())
+  email          String?    @unique
+  name           String?
+  role           String     @default("tutor") // "tutor", "vet", "manager", "admin"
+  isPremium      Boolean    @default(false)
+  status         String     @default("active") // "active", "suspended"
+  actionRadiusKm Int?       @default(15)
+  lat            Float?
+  lng            Float?
+  isOnline       Boolean    @default(false)
+  lastSeenAt     DateTime?
+  passwordHash       String?
+  mustChangePassword Boolean    @default(false)
+  phone          String?
+  address        String?
+  cbu            String?
+  university     String?
+  licenseNumber  String?
+  vetDocuments   VetDocument[]
+  pets           Pet[]
+  dispatches     Dispatch[] @relation("TutorDispatches")
+  vetDispatches  Dispatch[] @relation("VetDispatches")
+  createdAt      DateTime   @default(now())
+
+  @@index([lat, lng])
+  @@index([isOnline, role])
+}
+
+model VetDocument {
+  id           String   @id @default(uuid())
+  userId       String
+  docType      String   // "dni" | "title" | "license" | "insurance"
+  fileName     String
+  filePath     String
+  fileSize     Int
+  mimeType     String
+  encryptionIV String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model SystemConfig {
+  id          String   @id @default(uuid())
+  configKey   String   @unique
+  configValue String   @db.Text
+  updatedAt   DateTime @updatedAt
+}
+
+model Pet {
+  id        String   @id @default(uuid())
+  tutorId   String
+  name      String
+  species   String
+  breed     String?
+  age       String?
+  weight    Float?
+  tutor     User     @relation(fields: [tutorId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Dispatch {
+  id            String          @id @default(uuid())
+  tutorId       String
+  vetId         String?
+  offeredVetId  String?
+  offerExpiresAt DateTime?
+  rejectedVetIds String?        @db.Text // JSON string array of vet IDs who rejected or timed out
+  attemptCount  Int             @default(0)
+  lat           Float
+  lng           Float
+  status        String          @default("pending") // pending, offered, accepted, en_route, in_progress, completed, cancelled
+  price         Float
+  serviceType   String          @default("domicilio") // "domicilio" | "video"
+  symptoms      String?         @db.Text
+  petName       String?
+  petSpecies    String?
+  paymentMethod String?
+  tutor         User            @relation("TutorDispatches", fields: [tutorId], references: [id])
+  vet           User?           @relation("VetDispatches", fields: [vetId], references: [id])
+  medicalRecord MedicalRecord?
+  createdAt     DateTime        @default(now())
+
+  @@index([status, serviceType])
+  @@index([lat, lng])
+  @@index([offeredVetId])
+}
+
+model MedicalRecord {
+  id                   String   @id @default(uuid())
+  dispatchId           String   @unique
+  petName              String
+  petSpecies           String
+  petBreed             String?
+  petAge               String?
+  petWeight            String?
+  diagnosis            String   @db.Text
+  treatment            String   @db.Text
+  postCareInstructions String?  @db.Text
+  dispatch             Dispatch @relation(fields: [dispatchId], references: [id])
+  createdAt            DateTime @default(now())
+}
