@@ -1,4 +1,5 @@
-// This is your Prisma schema file
+// AVO-Beta V1.0.0 — Prisma Schema
+// Patient-centric model: Pet is the medical subject, not the Dispatch.
 
 generator client {
   provider   = "prisma-client-js"
@@ -10,39 +11,56 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────────────────────
+// 1. USERS (Tutors, Vets, Managers, Admins)
+// ─────────────────────────────────────────────
+
 model User {
-  id             String     @id @default(uuid())
-  email          String?    @unique
-  name           String?
-  role           String     @default("tutor") // "tutor", "vet", "manager", "admin"
-  isPremium      Boolean    @default(false)
-  status         String     @default("active") // "active", "suspended"
-  actionRadiusKm Int?       @default(15)
-  lat            Float?
-  lng            Float?
-  isOnline       Boolean    @default(false)
-  lastSeenAt     DateTime?
+  id                 String              @id @default(uuid())
+  email              String?             @unique
+  name               String?
+  role               String              @default("tutor") // "tutor" | "vet" | "manager" | "admin"
+  isPremium          Boolean             @default(false)
+  status             String              @default("active") // "active" | "suspended" | "pending_verification"
+  actionRadiusKm     Int?                @default(15)
+  lat                Float?
+  lng                Float?
+  h3IndexRes7        String?             // H3 hex index at resolution 7 (~5.16 km²) for fast geo lookup
+  isOnline           Boolean             @default(false)
+  lastSeenAt         DateTime?
   passwordHash       String?
-  mustChangePassword Boolean    @default(false)
-  phone          String?
-  address        String?
-  cbu            String?
-  university     String?
-  licenseNumber  String?
-  vetDocuments   VetDocument[]
-  pets           Pet[]
-  dispatches     Dispatch[] @relation("TutorDispatches")
-  vetDispatches  Dispatch[] @relation("VetDispatches")
-  createdAt      DateTime   @default(now())
+  mustChangePassword Boolean             @default(false)
+  phone              String?
+  address            String?
+  cbu                String?
+  // Vet-specific fields
+  university         String?
+  licenseNumber      String?
+  specialties        String?             @db.Text // JSON array: ["dermatología", "cardiología"]
+  rating             Float?              @default(5.0)
+  completedServices  Int                 @default(0)
+  acceptsVideo       Boolean             @default(true)
+  acceptsDomicilio   Boolean             @default(true)
+  // Relations
+  vetDocuments       VetDocument[]
+  pets               Pet[]
+  dispatches         Dispatch[]          @relation("TutorDispatches")
+  vetDispatches      Dispatch[]          @relation("VetDispatches")
+  vetEncounters      ClinicalEncounter[] @relation("VetEncounters")
+  vetPrescriptions   Prescription[]      @relation("VetPrescriptions")
+  vetVaccinations    VaccinationRecord[] @relation("VetVaccinations")
+  dispatchEvents     DispatchEvent[]
+  createdAt          DateTime            @default(now())
 
   @@index([lat, lng])
   @@index([isOnline, role])
+  @@index([h3IndexRes7])
 }
 
 model VetDocument {
   id           String   @id @default(uuid())
   userId       String
-  docType      String   // "dni" | "title" | "license" | "insurance"
+  docType      String // "dni" | "title" | "license" | "insurance"
   fileName     String
   filePath     String
   fileSize     Int
@@ -54,6 +72,10 @@ model VetDocument {
   @@index([userId])
 }
 
+// ─────────────────────────────────────────────
+// 2. SYSTEM CONFIG
+// ─────────────────────────────────────────────
+
 model SystemConfig {
   id          String   @id @default(uuid())
   configKey   String   @unique
@@ -61,56 +83,279 @@ model SystemConfig {
   updatedAt   DateTime @updatedAt
 }
 
+// ─────────────────────────────────────────────
+// 3. PETS (The Patient Entity)
+// ─────────────────────────────────────────────
+
 model Pet {
-  id        String   @id @default(uuid())
-  tutorId   String
-  name      String
-  species   String
-  breed     String?
-  age       String?
-  weight    Float?
-  tutor     User     @relation(fields: [tutorId], references: [id])
-  createdAt DateTime @default(now())
+  id                String              @id @default(uuid())
+  tutorId           String
+  name              String
+  species           String // "Perro" | "Gato" | "Ave" | "Exótico" | "Otro"
+  breed             String?
+  sex               String? // "Macho" | "Hembra" | "Macho (Castrado)" | "Hembra (Castrada)"
+  birthDate         DateTime?
+  age               String? // Legacy: free-text age for backward compat
+  weightKg          Float?
+  chipNumber        String?             @unique
+  photoUrl          String?
+  isNeutered        Boolean             @default(false)
+  allergies         String?             @db.Text
+  chronicConditions String?             @db.Text
+  tutor             User                @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  encounters        ClinicalEncounter[]
+  vaccinations      VaccinationRecord[]
+  dispatches        Dispatch[]
+  prescriptions     Prescription[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([tutorId])
 }
 
+// ─────────────────────────────────────────────
+// 4. DISPATCH (Service Request Lifecycle)
+// ─────────────────────────────────────────────
+
 model Dispatch {
-  id            String          @id @default(uuid())
-  tutorId       String
-  vetId         String?
-  offeredVetId  String?
-  offerExpiresAt DateTime?
-  rejectedVetIds String?        @db.Text // JSON string array of vet IDs who rejected or timed out
-  attemptCount  Int             @default(0)
-  lat           Float
-  lng           Float
-  status        String          @default("pending") // pending, offered, accepted, en_route, in_progress, completed, cancelled
-  price         Float
-  serviceType   String          @default("domicilio") // "domicilio" | "video"
-  symptoms      String?         @db.Text
-  petName       String?
-  petSpecies    String?
-  paymentMethod String?
-  tutor         User            @relation("TutorDispatches", fields: [tutorId], references: [id])
-  vet           User?           @relation("VetDispatches", fields: [vetId], references: [id])
-  medicalRecord MedicalRecord?
-  createdAt     DateTime        @default(now())
+  id              String             @id @default(uuid())
+  tutorId         String
+  petId           String?
+  vetId           String?
+  status          String             @default("TRIAGE_STARTED")
+  // Full FSM states: TRIAGE_STARTED, PET_DATA_LOADED, PAYMENT_PREAUTH,
+  // AWAITING_MATCH, CLAIMED, EN_ROUTE, ARRIVED, SESSION_ACTIVE,
+  // SESSION_INTERRUPTED, COMPLETING, COMPLETED, PAYMENT_CAPTURED,
+  // CANCELLED_BY_TUTOR, CANCELLED_BY_VET, EXPIRED_NO_MATCH,
+  // SESSION_ABANDONED, PAYMENT_FAILED, REFUNDED
+  serviceType     String             @default("domicilio") // "domicilio" | "video"
+  lat             Float
+  lng             Float
+  price           Float
+  finalPrice      Float? // After dynamic pricing calculation
+  pricingTier     String? // "base" | "peak" | "premium_fixed"
+  paymentPreauthId String?
+  idempotencyKey  String?            @unique
+  symptoms        String?            @db.Text
+  // Matching fields
+  currentTier     Int                @default(1) // 1=5km, 2=10km, 3=20km
+  tierStartedAt   DateTime?
+  matchingStartedAt DateTime?
+  // Claim fields (atomic assignment)
+  claimedAt       DateTime?
+  claimExpiresAt  DateTime?
+  // Legacy compat (to be removed in V2)
+  petName         String?
+  petSpecies      String?
+  paymentMethod   String?
+  // Timestamps
+  completedAt     DateTime?
+  createdAt       DateTime           @default(now())
+  // Relations
+  tutor           User               @relation("TutorDispatches", fields: [tutorId], references: [id])
+  vet             User?              @relation("VetDispatches", fields: [vetId], references: [id])
+  pet             Pet?               @relation(fields: [petId], references: [id])
+  encounter       ClinicalEncounter?
+  videoSession    VideoSession?
+  events          DispatchEvent[]
 
   @@index([status, serviceType])
   @@index([lat, lng])
-  @@index([offeredVetId])
+  @@index([status])
 }
 
-model MedicalRecord {
-  id                   String   @id @default(uuid())
-  dispatchId           String   @unique
-  petName              String
-  petSpecies           String
-  petBreed             String?
-  petAge               String?
-  petWeight            String?
-  diagnosis            String   @db.Text
-  treatment            String   @db.Text
-  postCareInstructions String?  @db.Text
-  dispatch             Dispatch @relation(fields: [dispatchId], references: [id])
-  createdAt            DateTime @default(now())
+// ─────────────────────────────────────────────
+// 5. DISPATCH EVENTS (Audit Trail)
+// ─────────────────────────────────────────────
+
+model DispatchEvent {
+  id         String   @id @default(uuid())
+  dispatchId String
+  event      String // CREATED, PAYMENT_PREAUTH, AWAITING_MATCH, TIER_EXPANDED, CLAIMED, REJECTED, EXPIRED, etc.
+  actorId    String?
+  metadata   String?  @db.Text // JSON: additional context
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  actor      User?    @relation(fields: [actorId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@index([dispatchId])
+  @@index([event])
+  @@index([actorId])
+}
+
+// ─────────────────────────────────────────────
+// 6. CLINICAL ENCOUNTERS (Patient-Centric HC)
+// ─────────────────────────────────────────────
+
+model ClinicalEncounter {
+  id                    String         @id @default(uuid())
+  code                  String         @unique // HC-YYYY-NNNN
+  petId                 String
+  vetId                 String
+  dispatchId            String?        @unique
+  modality              String // "video" | "domicilio"
+  date                  DateTime       @default(now())
+  // SOAP-style clinical fields
+  chiefComplaint        String         @db.Text // Motivo de consulta
+  anamnesis             String?        @db.Text // Historia clínica relatada
+  physicalExam          String?        @db.Text // Examen físico
+  diagnosis             String         @db.Text
+  differentialDiagnosis String?        @db.Text
+  treatment             String         @db.Text
+  prognosis             String?
+  observations          String?        @db.Text
+  // Signature
+  signatureHash         String? // SHA-256 of canonical content
+  signedAt              DateTime?
+  // Relations
+  pet                   Pet            @relation(fields: [petId], references: [id])
+  vet                   User           @relation("VetEncounters", fields: [vetId], references: [id])
+  dispatch              Dispatch?      @relation(fields: [dispatchId], references: [id])
+  prescriptions         Prescription[]
+  attachments           Attachment[]
+
+  @@index([petId])
+  @@index([vetId])
+  @@index([date])
+}
+
+// ─────────────────────────────────────────────
+// 7. PRESCRIPTIONS (Electronic Rx)
+// ─────────────────────────────────────────────
+
+model Prescription {
+  id              String             @id @default(uuid())
+  code            String             @unique // REC-YYYY-NNNN
+  encounterId     String
+  petId           String
+  vetId           String
+  instructions    String?            @db.Text
+  signatureHash   String? // SHA-256 of canonical prescription content
+  verificationUrl String?
+  issuedAt        DateTime           @default(now())
+  // Relations
+  encounter       ClinicalEncounter  @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  pet             Pet                @relation(fields: [petId], references: [id])
+  vet             User               @relation("VetPrescriptions", fields: [vetId], references: [id])
+  items           PrescriptionItem[]
+
+  @@index([encounterId])
+  @@index([petId])
+  @@index([vetId])
+}
+
+model PrescriptionItem {
+  id             String       @id @default(uuid())
+  prescriptionId String
+  drugName       String
+  dose           String
+  route          String?      @default("oral") // "oral" | "tópica" | "inyectable" | "ótica" | "oftálmica"
+  frequency      String // "Cada 8 horas" | "Cada 12 horas" | etc.
+  duration       String // "7 días" | "14 días" | etc.
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId])
+}
+
+// ─────────────────────────────────────────────
+// 8. VACCINATION RECORDS
+// ─────────────────────────────────────────────
+
+model VaccinationRecord {
+  id          String   @id @default(uuid())
+  petId       String
+  vetId       String?
+  vaccineName String
+  batch       String?
+  appliedDate DateTime
+  nextDueDate DateTime?
+  notes       String?  @db.Text
+  pet         Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  vet         User?    @relation("VetVaccinations", fields: [vetId], references: [id])
+
+  @@index([petId])
+  @@index([nextDueDate])
+}
+
+// ─────────────────────────────────────────────
+// 9. ATTACHMENTS (Images, Lab Results, X-Rays)
+// ─────────────────────────────────────────────
+
+model Attachment {
+  id          String            @id @default(uuid())
+  encounterId String
+  type        String // "image" | "lab_result" | "xray" | "other"
+  fileName    String
+  filePath    String
+  mimeType    String
+  fileSize    Int
+  encounter   ClinicalEncounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  createdAt   DateTime          @default(now())
+
+  @@index([encounterId])
+}
+
+// ─────────────────────────────────────────────
+// 10. VIDEO SESSIONS (Daily.co)
+// ─────────────────────────────────────────────
+
+model VideoSession {
+  id               String   @id @default(uuid())
+  dispatchId       String   @unique
+  roomName         String   @unique // Daily.co room name
+  roomUrl          String? // Daily.co room URL
+  status           String   @default("WAITING") // WAITING | ACTIVE | INTERRUPTED | ENDED
+  startedAt        DateTime?
+  endedAt          DateTime?
+  lastPingAt       DateTime?
+  gracePeriodEnds  DateTime?
+  reconnectCount   Int      @default(0)
+  maxReconnects    Int      @default(3)
+  totalDurationSec Int      @default(0)
+  idempotencyKey   String   @unique
+  dispatch         Dispatch @relation(fields: [dispatchId], references: [id])
+
+  @@index([status])
+  @@index([roomName])
+}
+
+// ─────────────────────────────────────────────
+// 11. WEBHOOK EVENTS (Idempotent Processing)
+// ─────────────────────────────────────────────
+
+model WebhookEvent {
+  id             String    @id @default(uuid())
+  idempotencyKey String    @unique
+  source         String // "mercadopago" | "modo" | "daily"
+  eventType      String // "payment.updated" | "room.ended" | etc.
+  payload        String    @db.Text
+  status         String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  errorMessage   String?   @db.Text
+  processedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([status])
+  @@index([source, eventType])
+}
+
+// ─────────────────────────────────────────────
+// 12. PRICING RULES (Dynamic + Premium Fixed)
+// ─────────────────────────────────────────────
+
+model PricingRule {
+  id          String   @id @default(uuid())
+  serviceType String // "video" | "domicilio"
+  tier        String // "base" | "extended_hours" | "night" | "weekend" | "holiday" | "premium_fixed"
+  basePrice   Float
+  multiplier  Float    @default(1.0)
+  startHour   Int?     @default(8) // 0-23, null = all hours
+  endHour     Int?     @default(20)
+  daysOfWeek  String?  @db.Text // JSON: [1,2,3,4,5] = Mon-Fri
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0) // Higher = higher priority when multiple rules match
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([serviceType, isActive])
+  @@index([tier])
 }
