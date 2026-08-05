@@ -48,7 +48,8 @@ next-env.d.ts
 # archives & uploads
 *.zip
 /uploads/*
-/brain/
-/tmp/
-
 !/uploads/.gitkeep
+
+# agent & tmp
+/brain
+/tmp
