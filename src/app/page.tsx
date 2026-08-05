@@ -39,7 +39,7 @@ export default function LandingPage() {
             </div>
             <div>
               <span className="text-2xl font-black tracking-tight text-foreground flex items-center gap-1">
-                AVO <span className="text-xs bg-sky-500/20 text-sky-400 font-bold px-2 py-0.5 rounded-full">v0.37.0</span>
+                AVO <span className="text-xs bg-sky-500/20 text-sky-400 font-bold px-2 py-0.5 rounded-full">AVO-Beta-V1.0.0-deploy</span>
               </span>
               <p className="text-xs text-muted font-semibold uppercase tracking-widest hidden sm:block">
                 Asistencia Veterinaria Online
